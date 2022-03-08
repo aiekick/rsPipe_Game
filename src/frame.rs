@@ -1,8 +1,8 @@
 extern crate glfw;
-use glfw::{Glfw, Window, Action, Context, Key, WindowEvent};
-use std::io;
+
+use std::ffi::{CStr, CString};
+use glfw::{Glfw, Action, Context, Key};
 use std::mem::{size_of, size_of_val};
-use std::sync::mpsc::Receiver;
 use gl33::*;
 
 /////////////////////////////////////////////////////
@@ -12,23 +12,23 @@ use gl33::*;
 type Vertex = [f32; 2];
 
 const VERTICES: [Vertex; 6] =
-    [   [-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0],
-        [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]    ];
+    [[-1.0, -1.0], [1.0, -1.0], [-1.0, 1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]]; // a quad
 
 const VERT_SHADER: &str = r#"#version 330 core
     layout (location = 0) in vec2 pos;
     void main()
     {
-        gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);
+        gl_Position = vec4(pos, 0.0, 1.0);
     }
 "#;
 
 const FRAG_SHADER: &str = r#"#version 330 core
+    uniform vec2 size;
     out vec4 final_color;
     void main()
     {
-        vec2 uv = gl_FragCoord.xy / 300.0;
-        final_color = vec4(cos(uv.x), sin(uv.y), cos(uv.x) * sin(uv.y), 1.0) * 0.5 + 0.5;
+        vec2 uv = gl_FragCoord.xy / size.y;
+        final_color = sin( 12 * vec4(uv, 0.0, 1.0)) * 0.5 + 0.5;
     }
 "#;
 
@@ -39,6 +39,7 @@ const FRAG_SHADER: &str = r#"#version 330 core
 pub struct MainFrame
 {
     m_glfw:Glfw,
+    m_size_uniform_loc:i32
 }
 
 impl MainFrame
@@ -47,7 +48,8 @@ impl MainFrame
     {
         glfw::WindowHint::ContextVersion(3, 3); // opengl 3.2
         Self {
-            m_glfw: glfw::init(glfw::FAIL_ON_ERRORS).unwrap()
+            m_glfw: glfw::init(glfw::FAIL_ON_ERRORS).unwrap(),
+            m_size_uniform_loc: 0
         }
     }
 
@@ -59,8 +61,14 @@ impl MainFrame
 
         window.make_current();
         window.set_key_polling(true);
+        window.set_size_polling(true);
 
         let gl = self.prepare();
+
+        let fbo_size = window.get_framebuffer_size();
+        let mut screen_size = (0f32, 0f32);
+        screen_size.0 = fbo_size.0 as f32;
+        screen_size.1 = fbo_size.1 as f32;
 
         while !window.should_close()
         {
@@ -73,11 +81,21 @@ impl MainFrame
                     glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                         window.set_should_close(true)
                     },
+                    glfw::WindowEvent::Size(x,y) => {
+                        screen_size.0 = x as f32;
+                        screen_size.1 = y as f32;
+                        unsafe {
+                            gl.Viewport(0,0,x,y);
+                        }
+                    },
                     _ => {},
                 }
             }
-
+            //screen_size = window.get_framebuffer_size() as (f32,f32);
             unsafe {
+                if self.m_size_uniform_loc > -1 {
+                    gl.Uniform2f( self.m_size_uniform_loc, screen_size.0 as f32, screen_size.1 as f32);
+                }
                 gl.Clear(GL_COLOR_BUFFER_BIT);
                 gl.DrawArrays(GL_TRIANGLES, 0, 6);
             }
@@ -194,6 +212,10 @@ impl MainFrame
             }
             gl.DeleteShader(vertex_shader);
             gl.DeleteShader(fragment_shader);
+
+            let name = CString::new("size").expect("err");
+            self.m_size_uniform_loc = gl.GetUniformLocation(shader_program,  name.as_ptr() as *const u8);
+            println!("size uniform loc : {}", self.m_size_uniform_loc);
 
             gl.UseProgram(shader_program);
         }
