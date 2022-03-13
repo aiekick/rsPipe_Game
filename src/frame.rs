@@ -1,6 +1,6 @@
 extern crate glfw;
 
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use glfw::{Glfw, Action, Context, Key};
 use std::mem::{size_of, size_of_val};
 use gl33::*;
@@ -27,7 +27,7 @@ const FRAG_SHADER: &str = r#"#version 330 core
     out vec4 final_color;
     void main()
     {
-        vec2 uv = gl_FragCoord.xy / size.y;
+        vec2 uv = gl_FragCoord.xy / min(size.x, size.y);
         final_color = sin( 12 * vec4(uv, 0.0, 1.0)) * 0.5 + 0.5;
     }
 "#;
@@ -104,6 +104,7 @@ impl MainFrame
         }
     }
 
+    #[allow(temporary_cstring_as_ptr)]
     fn prepare(&mut self) -> GlFns
     {
         let gl = unsafe {
@@ -213,9 +214,7 @@ impl MainFrame
             gl.DeleteShader(vertex_shader);
             gl.DeleteShader(fragment_shader);
 
-            let name = CString::new("size").expect("err");
-            self.m_size_uniform_loc = gl.GetUniformLocation(shader_program,  name.as_ptr() as *const u8);
-            println!("size uniform loc : {}", self.m_size_uniform_loc);
+            self.m_size_uniform_loc = gl.GetUniformLocation(shader_program, CString::new("size").unwrap().as_bytes_with_nul().as_ptr() as *const u8);
 
             gl.UseProgram(shader_program);
         }
